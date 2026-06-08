@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<manifest>
+  <control namespace="IPDS" constructor="WorkflowVisualizer" version="0.0.1" display-name-key="WorkflowVisualizer" description-key="WorkflowVisualizer description" control-type="virtual" >
+    <external-service-usage enabled="false">
+    </external-service-usage>
+    <!-- dataset node represents a set of entity records on CDS; allow more than one datasets -->
+    <data-set name="sampleDataSet" display-name-key="Dataset_Display_Key">
+    </data-set>
+    <resources>
+      <code path="index.ts" order="1"/>
+      <platform-library name="React" version="16.14.0" />
+      <platform-library name="Fluent" version="9.68.0" />
+      <!-- UNCOMMENT TO ADD MORE RESOURCES
+      <css path="css/WorkflowVisualizer.css" order="1" />
+      <resx path="strings/WorkflowVisualizer.1033.resx" version="1.0.0" />
+      -->
+    </resources>
+  </control>
+</manifest>
