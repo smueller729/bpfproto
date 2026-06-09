@@ -1,22 +1,33 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <manifest>
-  <control namespace="IPDS" constructor="WorkflowVisualizer" version="0.0.1" display-name-key="WorkflowVisualizer" description-key="WorkflowVisualizer description" control-type="virtual" >
+  <control
+    namespace="IPDS"
+    constructor="WorkflowVisualizer"
+    version="0.0.2"
+    display-name-key="WorkflowVisualizer"
+    description-key="WorkflowVisualizer description"
+    control-type="virtual">
+
     <external-service-usage enabled="false">
     </external-service-usage>
-    <!-- dataset node represents a set of entity records on CDS; allow more than one datasets -->
-    <data-set name="sampleDataSet" display-name-key="Dataset_Display_Key">
-    </data-set>
+
+    <property
+      name="visualizerHost"
+      display-name-key="Visualizer_Host_Display_Key"
+      description-key="Visualizer_Host_Desc_Key"
+      of-type="SingleLine.Text"
+      usage="bound"
+      required="true" />
+
     <resources>
-      <code path="index.ts" order="1"/>
+      <code path="index.ts" order="1" />
       <platform-library name="React" version="16.14.0" />
       <platform-library name="Fluent" version="9.46.2" />
-      <!-- UNCOMMENT TO ADD MORE RESOURCES
-      <css path="css/WorkflowVisualizer.css" order="1" />
-      <resx path="strings/WorkflowVisualizer.1033.resx" version="1.0.0" />
-      -->
     </resources>
+
     <feature-usage>
       <uses-feature name="WebAPI" required="true" />
     </feature-usage>
+
   </control>
 </manifest>
