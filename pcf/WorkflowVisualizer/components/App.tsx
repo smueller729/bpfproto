@@ -1,9 +1,11 @@
 import * as React from 'react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import '../styles/App.css'
 import '../styles/index.css'
 
 type StageStatus = 'completed' | 'inProgress' | 'skipped' | 'returned'
+
+type LoadState = 'loading' | 'ready' | 'error'
 
 type WorkflowStage = {
   id: string
@@ -15,6 +17,7 @@ type WorkflowStage = {
 }
 
 type DataverseWorkflowStageRow = {
+  usgs_workflowstageid?: string
   usgs_stage: string
   usgs_sequencenumber: number
   usgs_description?: string
@@ -37,6 +40,23 @@ type StageViewModel = WorkflowStage & {
   isDestination: boolean
 }
 
+type XrmWebApi = {
+  retrieveMultipleRecords: (
+    entityLogicalName: string,
+    options?: string,
+  ) => Promise<{ entities: DataverseWorkflowStageRow[] }>
+}
+
+type XrmContext = {
+  WebApi: XrmWebApi
+}
+
+declare global {
+  interface Window {
+    Xrm?: XrmContext
+  }
+}
+
 const currentSequence = 3
 
 const fetchXml = `<fetch xmlns:generator='MarkMpn.SQL4CDS'>
@@ -56,63 +76,6 @@ const fetchXml = `<fetch xmlns:generator='MarkMpn.SQL4CDS'>
     <order attribute='usgs_sequencenumber' />
   </entity>
 </fetch>`
-
-const workflowStageRows: DataverseWorkflowStageRow[] = [
-  {
-    usgs_stage: 'Intake Review',
-    usgs_sequencenumber: 1,
-    usgs_description: 'Confirm the request, form logic, and required product details.',
-    'W.usgs_name': 'Product Review Workflow',
-    'W.usgs_description': 'Routes a product through review, approval, and publication.',
-    'W.usgs_stagescount': 6,
-    'W.usgs_workflowid': 'da4215da-44fd-f011-8407-001dd80bcb40',
-  },
-  {
-    usgs_stage: 'Program Validation',
-    usgs_sequencenumber: 2,
-    usgs_description: 'Validate program ownership, data source, and business rules.',
-    'W.usgs_name': 'Product Review Workflow',
-    'W.usgs_description': 'Routes a product through review, approval, and publication.',
-    'W.usgs_stagescount': 6,
-    'W.usgs_workflowid': 'da4215da-44fd-f011-8407-001dd80bcb40',
-  },
-  {
-    usgs_stage: 'Quality Check',
-    usgs_sequencenumber: 3,
-    usgs_description: 'Current stage for metadata, evidence, and completeness checks.',
-    'W.usgs_name': 'Product Review Workflow',
-    'W.usgs_description': 'Routes a product through review, approval, and publication.',
-    'W.usgs_stagescount': 6,
-    'W.usgs_workflowid': 'da4215da-44fd-f011-8407-001dd80bcb40',
-  },
-  {
-    usgs_stage: 'Technical Review',
-    usgs_sequencenumber: 4,
-    usgs_description: 'Subject matter experts evaluate technical readiness.',
-    'W.usgs_name': 'Product Review Workflow',
-    'W.usgs_description': 'Routes a product through review, approval, and publication.',
-    'W.usgs_stagescount': 6,
-    'W.usgs_workflowid': 'da4215da-44fd-f011-8407-001dd80bcb40',
-  },
-  {
-    usgs_stage: 'Publishing Approval',
-    usgs_sequencenumber: 5,
-    usgs_description: 'Approvers decide whether the product is ready for release.',
-    'W.usgs_name': 'Product Review Workflow',
-    'W.usgs_description': 'Routes a product through review, approval, and publication.',
-    'W.usgs_stagescount': 6,
-    'W.usgs_workflowid': 'da4215da-44fd-f011-8407-001dd80bcb40',
-  },
-  {
-    usgs_stage: 'Released',
-    usgs_sequencenumber: 6,
-    usgs_description: 'Final stage after approval and publication tasks are complete.',
-    'W.usgs_name': 'Product Review Workflow',
-    'W.usgs_description': 'Routes a product through review, approval, and publication.',
-    'W.usgs_stagescount': 6,
-    'W.usgs_workflowid': 'da4215da-44fd-f011-8407-001dd80bcb40',
-  },
-]
 
 const workflowActions: WorkflowAction[] = [
   {
@@ -148,10 +111,44 @@ const statusContent: Record<StageStatus, { label: string; icon: string }> = {
   returned: { label: 'Returned', icon: 'return' },
 }
 
+function getXrmContext(): XrmContext | undefined {
+  if (window.Xrm?.WebApi) {
+    return window.Xrm
+  }
+
+  try {
+    return window.parent?.Xrm?.WebApi ? window.parent.Xrm : undefined
+  } catch {
+    return undefined
+  }
+}
+
+async function fetchWorkflowStages(): Promise<{
+  rows: DataverseWorkflowStageRow[]
+  source: string
+}> {
+  const xrm = getXrmContext()
+
+  if (!xrm) {
+    throw new Error(
+      'Dataverse context is unavailable. Host this PCF control in a model-driven app so Xrm.WebApi can run the FetchXML query.',
+    )
+  }
+
+  const response = await xrm.WebApi.retrieveMultipleRecords(
+    'usgs_workflowstage',
+    `?fetchXml=${encodeURIComponent(fetchXml)}`,
+  )
+
+  return { rows: response.entities, source: 'Dataverse FetchXML query' }
+}
+
 function normalizeWorkflowStages(rows: DataverseWorkflowStageRow[]): WorkflowStage[] {
   return rows
     .map((row) => ({
-      id: `${row['W.usgs_workflowid'] ?? 'workflow'}-${row.usgs_sequencenumber}`,
+      id:
+        row.usgs_workflowstageid ??
+        `${row['W.usgs_workflowid'] ?? 'workflow'}-${row.usgs_sequencenumber}`,
       stage: row.usgs_stage,
       sequenceNumber: row.usgs_sequencenumber,
       description: row.usgs_description ?? '',
@@ -240,9 +237,50 @@ function StatusIcon({ status }: { status: StageStatus }) {
   )
 }
 
-function App() {
-  const stages = useMemo(() => normalizeWorkflowStages(workflowStageRows), [])
+function App(): React.ReactElement {
+  const [rows, setRows] = useState<DataverseWorkflowStageRow[]>([])
+  const [loadState, setLoadState] = useState<LoadState>('loading')
+  const [sourceLabel, setSourceLabel] = useState('Loading workflow stages.')
+  const stages = useMemo(() => normalizeWorkflowStages(rows), [rows])
   const [selectedActionId, setSelectedActionId] = useState(workflowActions[0].id)
+
+  useEffect(() => {
+    let active = true
+
+    async function loadStages() {
+      try {
+        setLoadState('loading')
+        setSourceLabel('Loading workflow stages.')
+
+        const { rows: nextRows, source } = await fetchWorkflowStages()
+
+        if (!active) {
+          return
+        }
+
+        setRows(nextRows)
+        setSourceLabel(source)
+        setLoadState('ready')
+      } catch (error) {
+        if (!active) {
+          return
+        }
+
+        setSourceLabel(
+          error instanceof Error
+            ? error.message
+            : 'Dataverse did not return workflow stages.',
+        )
+        setLoadState('error')
+      }
+    }
+
+    loadStages()
+
+    return () => {
+      active = false
+    }
+  }, [])
 
   const selectedAction =
     workflowActions.find((action) => action.id === selectedActionId) ??
@@ -264,9 +302,15 @@ function App() {
     <main className="appShell">
       <section className="commandBar" aria-labelledby="workflow-title">
         <div className="workflowIntro">
-          <p className="eyebrow">USGS model-driven app resource</p>
-          <h1 id="workflow-title">{stages[0]?.workflowName}</h1>
-          <p>{stages[0]?.workflowDescription}</p>
+          <p className="eyebrow">USGS model-driven app resource v2</p>
+          <h1 id="workflow-title">{stages[0]?.workflowName ?? 'Workflow'}</h1>
+          <p>
+            {stages[0]?.workflowDescription ??
+              'Workflow stages are loaded from Dataverse.'}
+          </p>
+          <p className="sourceNotice" aria-live="polite">
+            {sourceLabel}
+          </p>
         </div>
 
         <div className="actionPanel">
@@ -283,8 +327,9 @@ function App() {
             ))}
           </select>
           <p id="route-summary" aria-live="polite">
-            {currentStage?.stage} routes {routeDirection} to{' '}
-            {destinationStage?.stage}. {selectedAction.helpText}
+            {currentStage && destinationStage
+              ? `${currentStage.stage} routes ${routeDirection} to ${destinationStage.stage}. ${selectedAction.helpText}`
+              : 'Select an action after workflow stages load.'}
           </p>
         </div>
       </section>
@@ -300,40 +345,55 @@ function App() {
             <h2 id="stepper-title">Stage route preview</h2>
           </div>
           <div className="routeMeta" aria-label="Route details">
-            <span>Current: {currentStage?.stage}</span>
-            <span>Destination: {destinationStage?.stage}</span>
+            <span>Current: {currentStage?.stage ?? 'Loading'}</span>
+            <span>Destination: {destinationStage?.stage ?? 'Loading'}</span>
           </div>
         </div>
 
-        <ol className="stepper" aria-label="Workflow stages">
-          {stageViewModels.map((stage) => (
-            <li
-              className="step"
-              data-status={stage.status}
-              key={stage.id}
-              aria-current={stage.isDestination ? 'step' : undefined}
-            >
-              <div className="stepRail" aria-hidden="true"></div>
-              <div className="stepMarker">
-                <StatusIcon status={stage.status} />
-              </div>
-              <div className="stepContent">
-                <div className="stageTitleRow">
-                  <span className="stageNumber">
-                    Stage {stage.sequenceNumber}
-                  </span>
-                  <span className="statusPill">{statusContent[stage.status].label}</span>
+        {loadState === 'error' && (
+          <div className="emptyState" role="alert">
+            <h3>Unable to load workflow stages</h3>
+            <p>{sourceLabel}</p>
+          </div>
+        )}
+
+        {loadState !== 'error' && (
+          <ol
+            className="stepper"
+            aria-busy={loadState === 'loading'}
+            aria-label="Workflow stages"
+          >
+            {stageViewModels.map((stage) => (
+              <li
+                className="step"
+                data-status={stage.status}
+                key={stage.id}
+                aria-current={stage.isDestination ? 'step' : undefined}
+              >
+                <div className="stepRail" aria-hidden="true"></div>
+                <div className="stepMarker">
+                  <StatusIcon status={stage.status} />
                 </div>
-                <h3>{stage.stage}</h3>
-                <p>{stage.description}</p>
-                <div className="stageTags" aria-label="Stage markers">
-                  {stage.isCurrent && <span>Current location</span>}
-                  {stage.isDestination && <span>Action destination</span>}
+                <div className="stepContent">
+                  <div className="stageTitleRow">
+                    <span className="stageNumber">
+                      Stage {stage.sequenceNumber}
+                    </span>
+                    <span className="statusPill">
+                      {statusContent[stage.status].label}
+                    </span>
+                  </div>
+                  <h3>{stage.stage}</h3>
+                  <p>{stage.description}</p>
+                  <div className="stageTags" aria-label="Stage markers">
+                    {stage.isCurrent && <span>Current location</span>}
+                    {stage.isDestination && <span>Action destination</span>}
+                  </div>
                 </div>
-              </div>
-            </li>
-          ))}
-        </ol>
+              </li>
+            ))}
+          </ol>
+        )}
       </section>
 
       <aside className="supportingGrid" aria-label="Implementation notes">
